@@ -1,0 +1,10 @@
+# @package _group_
+
+batch_size: 20
+num_workers: 0
+pin_memory: True
+
+target_size_h: 256
+target_size_w: 256
+
+val_rate: 0.2
