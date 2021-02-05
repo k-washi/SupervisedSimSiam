@@ -1,0 +1,10 @@
+defaults:
+  - food101: default
+  - dataloader: default
+hydra:
+  job_logging:
+    formatters:
+      simple:
+        format: "%(levelname)-8s: %(asctime)s | %(filename)-12s - %(funcName)-12s : %(lineno)-4s -- %(message)s"
+    root:
+      handlers: [console]
