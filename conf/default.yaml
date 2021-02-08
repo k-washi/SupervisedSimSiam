@@ -1,6 +1,7 @@
 defaults:
   - food101: default
   - dataloader: default
+  - effnet: default
 hydra:
   job_logging:
     formatters:
