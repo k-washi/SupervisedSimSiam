@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils import data
 from torchsummary import summary
+from torch.cuda import amp
 from tqdm import tqdm
 import glob
 
@@ -91,8 +92,13 @@ def test_process(model, dataloaders_dict, criterion, model_path):
         labels = labels.to(device)
 
         with torch.no_grad():
-            outputs = model(inputs)
-            loss = criterion(outputs, labels)
+            if torch.cuda.is_available():
+                with amp.autocast():
+                    outputs = model(inputs)
+                    loss = criterion(outputs, labels)
+            else:
+                outputs = model(inputs)
+                loss = criterion(outputs, labels)
             _, preds = torch.max(outputs, 1)
 
             epoch_loss += loss.item() * inputs.size(0)  # lossの合計を計算
@@ -112,6 +118,11 @@ def train_process(cnf, model, dataloaders_dict, criterion, optimizer, scheduler)
     logger.info(f"Log output dir: {os.getcwd()}")
     device = torch.device(
         "cuda:0" if torch.cuda.is_available() else "cpu")
+
+    scaler = None
+    if torch.cuda.is_available():
+        scaler = torch.cuda.amp.GradScaler() 
+    
     logger.info(f"{device}で学習を行います。")
     model.to(device)
 
@@ -155,13 +166,24 @@ def train_process(cnf, model, dataloaders_dict, criterion, optimizer, scheduler)
 
                 # forwardを計算
                 with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    loss = criterion(outputs, labels)
+                    if torch.cuda.is_available():
+                        with amp.autocast():
+                            outputs = model(inputs)
+                            loss = criterion(outputs, labels)
+                    else:
+                        outputs = model(inputs)
+                        loss = criterion(outputs, labels)
+
                     _, preds = torch.max(outputs, 1)
 
                     if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
+                        if torch.cuda.is_available():
+                            scaler.scale(loss).backword()
+                            scaler.step(optimizer)
+                            scaler.update()
+                        else:
+                            loss.backward()
+                            optimizer.step()
 
                     epoch_loss += loss.item() * inputs.size(0)  # lossの合計を計算
                     epoch_corrects += torch.sum(preds == labels.data)
