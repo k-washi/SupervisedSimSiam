@@ -4,3 +4,5 @@ dataset_dir: dataset/food-101/images
 train_json: dataset/food-101/meta/train.json
 test_json: dataset/food-101/meta/test.json
 img_ext: .jpg
+
+num_classes: 101

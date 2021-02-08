@@ -129,4 +129,6 @@ dmypy.json
 .pyre/
 .vscode
 
-dataset
+food-101
+*tar.gz
+*zip
