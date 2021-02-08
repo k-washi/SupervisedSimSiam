@@ -28,6 +28,7 @@ from utils.seeder import fix_seed
 
 SEED = 42
 fix_seed(SEED)
+TEST_KEY = "test"
 
 def train():
     """
