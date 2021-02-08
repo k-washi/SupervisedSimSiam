@@ -2,8 +2,8 @@
 
 # train
 learning_rate: 0.01
-num_epochs: 200
-early_stopping: 20
+num_epochs: 50
+early_stopping: 10
 
 # model
 model_weight_dir: effnet
@@ -11,5 +11,5 @@ model_weight_prefix: effnet
 
 
 # scheduler
-scheduler_patience: 20
+scheduler_patience: 5
 
