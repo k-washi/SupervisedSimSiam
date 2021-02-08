@@ -178,7 +178,7 @@ def train_process(cnf, model, dataloaders_dict, criterion, optimizer, scheduler)
 
                     if phase == 'train':
                         if torch.cuda.is_available():
-                            scaler.scale(loss).backword()
+                            scaler.scale(loss).backward()
                             scaler.step(optimizer)
                             scaler.update()
                         else:
