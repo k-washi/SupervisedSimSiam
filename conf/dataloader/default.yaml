@@ -1,7 +1,7 @@
 # @package _group_
 
-batch_size: 20
-num_workers: 4
+batch_size: 50
+num_workers: 2
 pin_memory: True
 
 target_size_h: 256
