@@ -36,3 +36,7 @@ Food101のデータセットのダウンロードと展開
   year = {2014}
 }
 ```
+
+# notebook
+
+[food101_effnet_train.ipynb](https://colab.research.google.com/drive/1N_aXT_8YxamsoYlAzUEcIhtVa94KeBZ9)
