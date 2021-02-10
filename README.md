@@ -5,11 +5,11 @@
 
 
 ## @TODO
-[ ] データローダの作成  
-[ ] EfficientNetの実装  
-[ ] SupervisedContrastiveLearningの実装  
+[x] データローダの作成  
+[x] EfficientNetの実装  
+[x] SupervisedContrastiveLearningの実装  
 [ ] SimSiamによる学習の実装  
-
+[ ] MADGRAD Optimizerの実装
 # Setting
 
 ## データセットの準備
@@ -26,7 +26,7 @@ Food101のデータセットのダウンロードと展開
 - [PytorchでEfficientNetを実装してみる](https://tzmi.hatenablog.com/entry/2020/02/06/183314)
 - [Exploring Simple Siamese Representation Learning](https://github.com/leaderj1001/SimSiam)
 - [SupContrast: Supervised Contrastive Learning](https://github.com/HobbitLong/SupContrast)
-
+- [MADGRAD Optimization method](https://github.com/facebookresearch/madgrad)
 ### データセット
 ```
 @inproceedings{bossard14,
