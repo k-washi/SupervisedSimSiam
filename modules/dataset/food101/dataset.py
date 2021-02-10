@@ -1,6 +1,7 @@
 import os
 from torch.utils import data
 import cv2
+import random
 
 from utils.json_helper import json_open
 from utils.dataset_helper import split_dataset, path_check
@@ -30,6 +31,54 @@ class Food101Dataset(data.Dataset):
         img = self._transform(image=img)["image"]
         
         return img, label
+
+class Food101ContrastiveDataset(data.Dataset):
+    def __init__(self, img_paths, labels, transform, double_aug_rate=0.2) -> None:
+        self._transform = transform
+        self._img_paths = img_paths
+        self._labels = labels
+        self._img_dict_by_keys = self._label_dict_set()
+        self._double_aug_rate = double_aug_rate
+        
+
+    def __len__(self) -> int:
+        return len(self._img_paths)
+    
+    def __getitem__(self, index: int):
+        img_path = self._img_paths[index]
+        label = self._labels[index]
+
+        img1 = cv2.imread(img_path)
+        if img1 is None:
+            ValueError(f"Can not read {img_path} in dataloader")
+        img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+
+        if random.random() > self._double_aug_rate:
+            img_path = random.choice(self._img_dict_by_keys[label])
+        
+        img2 = cv2.imread(img_path)
+        if img2 is None:
+            ValueError(f"Can not read {img_path} in dataloader")
+        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB) 
+        
+        
+        # albumentations transform
+        img1 = self._transform(image=img1)["image"]
+        img2 = self._transform(image=img2)["image"]
+        
+        return img1, img2, label
+    
+    def _label_dict_set(self):
+        data_dict = {}
+        for img_path, label in zip(self._img_paths, self._labels):
+            if label not in data_dict:
+                data_dict[label] = []
+            
+            data_dict[label].append(img_path)
+        
+        return data_dict
+
+
 def create_dataset(cnf):
     """
     データセットのパスとラベルを返す

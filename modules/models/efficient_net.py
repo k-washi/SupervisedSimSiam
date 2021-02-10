@@ -1,9 +1,15 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch._C import dtype
 import math
 
 from modules.models.model_helper import Swish, weight_init
+
+PROJ_HEDDEN = 2048
+PROJ_OUT = 1024
+PRED_HEDDEN = 512
+PRED_OUT = 1024
 
 class SqueezeExcitation(nn.Module):
     """
@@ -122,7 +128,7 @@ class EfficientNet(nn.Module):
                 features.extend([BMConvBlock(ch_in, ch_out, t, stride, k)])
                 ch_in = ch_out
             
-        ch_last = int(math.ceil(1280 * width_mult))
+        ch_last = int(math.ceil(PROJ_HEDDEN * width_mult))
         features.extend([ConvBN(ch_in, ch_last, 1), Swish()])
 
         self.features = nn.Sequential(*features)
@@ -133,14 +139,26 @@ class EfficientNet(nn.Module):
                 nn.AdaptiveAvgPool2d(1),
                 Flatten(),
                 nn.Linear(ch_last, middle_liner_output), # this is from supervised contrastive learning paper, not Effnet
-                nn.Dropout(dropout_rate),
-                nn.Linear(middle_liner_output, num_classes)
+                nn.BatchNorm1d(middle_liner_output),
+                Swish(),
+                nn.Linear(ch_last, middle_liner_output), # this is from supervised contrastive learning paper, not Effnet
+                nn.BatchNorm1d(middle_liner_output),
+                Swish(),
+                nn.Linear(middle_liner_output, num_classes),
             )
         else:
             # this is feature vector
             self.classifier = nn.Sequential(
                 nn.AdaptiveAvgPool2d(1),
                 Flatten(),
+                nn.Linear(ch_last, middle_liner_output), # this is from supervised contrastive learning paper, not Effnet
+                nn.BatchNorm1d(middle_liner_output),
+                Swish(),
+                nn.Linear(ch_last, middle_liner_output), # this is from supervised contrastive learning paper, not Effnet
+                nn.BatchNorm1d(middle_liner_output),
+                Swish(),
+                nn.Linear(middle_liner_output, PROJ_OUT),
+                nn.BatchNorm1d(PROJ_OUT)
             )
         
     def forward(self, x):
@@ -148,6 +166,119 @@ class EfficientNet(nn.Module):
         x = self.classifier(x)
         return x
 
+class SupConLoss(nn.Module):
+    """
+    Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf
+    """
+
+    def __init__(self, temperature=0.07, contrast_mode="all", base_temperature=0.07):
+        super(SupConLoss).__init__()
+        self.temperature = temperature
+        self.contrast_mode = contrast_mode
+        self.base_temperature = base_temperature
+
+    def forward(self, p, z, labels=None, mask=None):
+        z.detach()
+        p = F.normalize(p, p=2, dim=1)
+        z = F.normalize(z, p=2, dim=1)
+
+        device = (torch.device('cuda') if p.is_cuda else torch.device('cpu'))
+        batch_size = p.shape[0]
+
+        if labels is not None and mask is not None:
+            raise ValueError('Cannot define both `labels` and `mask`')
+        elif labels is None and mask is None:
+            mask = torch.eye(batch_size, dtype=torch.float32).to(device)
+        elif labels is not None:
+            labels = labels.contiguous().view(-1, 1)
+            if labels.shape[0] != batch_size:
+                raise ValueError('Num of labels does not match num of features')
+            mask = torch.eq(labels, labels.T).float().to(device)
+        else:
+            mask = mask.float().to(device)
+        
+        #feature_count = z.shape[1]
+        #z = torch.cat(torch.unbind(z, dim=1), dim=0)
+        #p = torch.cat(torch.unbind(p, dim=1), dim=0)
+
+        # conpute logits
+        pz = torch.div(
+            torch.matmul(p, z.T), 
+            self.temperature
+        ) # bs x bs
+        
+        # for numerical stability
+        logits_max, _ = torch.max(pz, dim=1, keepdim=True)
+        logits = pz- logits_max.detach()
+
+        # tile mask
+        # mask (bz x bz) => (bz*fc x bz*fc)
+        #mask = mask.repeat(feature_count, feature_count)
+        
+        logits_mask = torch.scatter(
+            torch.ones_like(mask),
+            1,
+            torch.arange(batch_size).view(-1, 1).to(device),
+            0
+        ) # i = j => 0, i != j => 1
+        
+
+        #mask = mask * logits_mask
+
+        # compute log_prob
+        exp_logits = torch.exp(logits) * logits_mask 
+        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+
+        # compute mean of log-likelihood over positive
+        mean_log_prob_pos = (mask * log_prob).sum(1) / mask.sum(1)
+
+        # loss
+        loss = - (self.temperature / self.base_temperature) * mean_log_prob_pos
+        loss = loss.view(batch_size).mean()
+
+        return loss
+    
+
+class EffnetSimSiamPred(nn.Module):
+    def __init__(self, num_features, num_pred):
+        super().__init__()
+        self.pred = nn.Sequential(
+            nn.Linear(PROJ_OUT, PRED_HEDDEN),
+            nn.BatchNorm1d(PRED_HEDDEN),
+            Swish(),
+            nn.Linear(PRED_HEDDEN, PRED_OUT)
+        )
+
+        self.d = SupConLoss()
+
+    def forward(self, feature1, feature2):
+        out1 = self.pred(feature1)
+        out2 = self.pred(feature2)
+
+        d1 = self.d(out1, feature1) / 2.
+        d2 = self.d(out2, feature2) / 2.
+        loss = d1 + d2
+        return loss
+
+class EffnetDwonStream(nn.Module):
+    def __init__(self,width_mult=1., depth_mult=1., resolution=False, dropout_rate=0.2, input_ch=3, num_classes=1000):
+        super().__init__()
+        self._features =  _efficientnet(width_mult, depth_mult, resolution, dropout_rate, input_ch, num_classes=0) #num_classes=0でfeature出力に切り替え
+
+        for name, param in self._features.named_parameters():
+            param.requires_grad = False
+        
+        self.out = nn.Sequential(
+            nn.Linear(PROJ_OUT, hidden=PRED_HEDDEN),
+            nn.BatchNorm1d(PRED_HEDDEN),
+            Swish(),
+            nn.Linear(PRED_HEDDEN, num_classes),
+        )
+
+    def forward(self, x):
+        x = self._features(x)
+        x = self.out(x)
+        return x
 
 def _efficientnet(w_mult, d_mult, resolution, drop_rate, input_ch, num_classes=1000):
     model = EfficientNet(w_mult, d_mult, resolution, drop_rate, input_ch, num_classes)
